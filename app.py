@@ -7,6 +7,7 @@ import re
 import sqlite3
 from datetime import datetime, date, timedelta
 from pathlib import Path
+import html
 
 import numpy as np
 import pandas as pd
@@ -81,7 +82,7 @@ def safe_date_list(values):
         if pd.isna(v):
             continue
         try:
-            d = pd.to_datetime(v, dayfirst=True, errors="coerce")
+            d = pd.to_datetime(v, errors="coerce")
             if pd.isna(d):
                 continue
             out.append(d.date())
@@ -114,6 +115,11 @@ def get_week_dates_from_plan(week_num, endurance_df, sessions_df):
 
 
 def get_plan_week_for_date(selected_date, endurance_df, sessions_df):
+    selected_date = pd.to_datetime(selected_date, errors="coerce")
+    if pd.isna(selected_date):
+        return None
+    selected_date = selected_date.date()
+
     e_match = endurance_df.loc[endurance_df["_date"] == selected_date, "Week"]
     if not e_match.empty:
         val = to_num(e_match.iloc[0])
@@ -575,7 +581,7 @@ def build_data(endurance: pd.DataFrame, sessions: pd.DataFrame, exercises: pd.Da
 
     e["Week"] = numcol(e, "Week").astype("Int64")
     e["Date_raw"] = e["Date"]
-    e["Date"] = pd.to_datetime(e["Date"], dayfirst=True, errors="coerce").dt.date
+    e["Date"] = pd.to_datetime(e["Date"], format="%Y-%m-%d %H:%M:%S", errors="coerce").dt.date
     e["_date"] = e["Date"]
 
     e["Day"] = txtcol(e, "Day")
@@ -626,7 +632,7 @@ def build_data(endurance: pd.DataFrame, sessions: pd.DataFrame, exercises: pd.Da
     s["SesionID"] = txtcol(s, "SesionID")
     s["Week"] = numcol(s, "Week").astype("Int64")
     s["Date_raw"] = s["Date"]
-    s["Date"] = pd.to_datetime(s["Date"], dayfirst=True, errors="coerce").dt.date
+    s["Date"] = pd.to_datetime(s["Date"], errors="coerce").dt.date
     s["_date"] = s["Date"]
 
     s["Day"] = txtcol(s, "Day")
@@ -849,68 +855,70 @@ tab_today, tab_week, tab_plan, tab_strength_progress, tab_body_metrics, tab_expo
 with tab_today:
     st.subheader("Daily check-in")
 
+    endurance_today = endurance_calc.copy()
+    sessions_today = sessions_calc.copy()
+
+    endurance_today["_date"] = pd.to_datetime(endurance_today["_date"], errors="coerce").dt.date
+    sessions_today["_date"] = pd.to_datetime(sessions_today["_date"], errors="coerce").dt.date
+
+    endurance_today = endurance_today[endurance_today["_date"].notna()].copy()
+    sessions_today = sessions_today[sessions_today["_date"].notna()].copy()
+
     default_date = date.today()
-    all_plan_dates = sorted(set(
-    safe_date_list(endurance_calc["_date"].tolist()) +
-    safe_date_list(sessions_calc["_date"].tolist())
-))
-
     selected_date = st.date_input("Date", value=default_date, key="calendar_date")
+    selected_date = pd.to_datetime(selected_date, errors="coerce").date()
 
-    derived_week = get_plan_week_for_date(selected_date, endurance_calc, sessions_calc)
+    derived_week = get_plan_week_for_date(selected_date, endurance_today, sessions_today)
     if derived_week is not None:
         st.session_state["selected_plan_week"] = derived_week
 
     current_week = st.session_state.get("selected_plan_week", week_list[0])
-    week_dates = get_week_dates_from_plan(current_week, endurance_calc, sessions_calc)
+    week_dates = get_week_dates_from_plan(current_week, endurance_today, sessions_today)
 
     if week_dates:
         st.markdown("#### Week view")
-    
+
         for d in week_dates:
-            day_runs = endurance_calc[endurance_calc["_date"] == d].copy()
-            day_strength = sessions_calc[sessions_calc["_date"] == d].copy()
-    
-            run_names = []
-            strength_names = []
-    
-            if not day_runs.empty:
-                run_names = day_runs["Session"].dropna().astype(str).tolist()[:2]
-    
-            if not day_strength.empty:
-                strength_names = day_strength["Session"].dropna().astype(str).tolist()[:2]
-    
-            items = []
-            items += [f"🏃 {x}" for x in run_names]
-            items += [f"🏋️ {x}" for x in strength_names]
-    
-            detail_txt = "<br>".join(items) if items else "Rest / free day"
+            day_runs = endurance_today[endurance_today["_date"] == d].copy()
+            day_strength = sessions_today[sessions_today["_date"] == d].copy()
+
+            run_names = [
+                html.escape(x)
+                for x in day_runs["Session"].dropna().astype(str).tolist()[:2]
+            ]
+
+            strength_names = [
+                html.escape(x)
+                for x in day_strength["Session"].dropna().astype(str).tolist()[:2]
+            ]
+
+            detail_items = []
+            detail_items.extend([f"🏃 {x}" for x in run_names])
+            detail_items.extend([f"🏋️ {x}" for x in strength_names])
+
+            detail_txt = "<br>".join(detail_items) if detail_items else "Rest / free day"
+
             selected_style = "border:2px solid #22c55e;" if d == selected_date else ""
-    
+            selected_label = "✅ Selected" if d == selected_date else ""
+
             st.markdown(
                 f"""
-                <div class="kpi-card" style="
-                    padding:12px;
-                    margin-bottom:8px;
-                    min-height:auto;
-                    {selected_style}
-                ">
+                <div class="kpi-card" style="padding:12px; margin-bottom:8px; min-height:auto; {selected_style}">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                         <div>
                             <div class="kpi-title">{d.strftime('%A')}</div>
                             <div class="kpi-value" style="font-size:0.95rem;">{d.strftime('%d %b')}</div>
                         </div>
-                        <div style="text-align:right; font-size:0.9rem;">
-                            {"✅ Selected" if d == selected_date else ""}
-                        </div>
+                        <div style="text-align:right; font-size:0.9rem;">{selected_label}</div>
                     </div>
-                    <div class="kpi-sub" style="margin-top:8px;">
+                    <div style="margin-top:8px; line-height:1.5; white-space:normal;">
                         {detail_txt}
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+
     st.markdown("<br>", unsafe_allow_html=True)
     checkin = get_daily_checkin(CLIENT_ID, selected_date)
 
@@ -946,8 +954,8 @@ with tab_today:
     st.markdown("---")
     st.subheader("Sessions for selected day")
 
-    suggested_e = endurance_calc[endurance_calc["_date"] == selected_date].copy()
-    suggested_s = sessions_calc[sessions_calc["_date"] == selected_date].copy()
+    suggested_e = endurance_today[endurance_today["_date"] == selected_date].copy()
+    suggested_s = sessions_today[sessions_today["_date"] == selected_date].copy()
 
     col_day1, col_day2 = st.columns(2)
 
@@ -998,8 +1006,8 @@ with tab_today:
         key="flex_week"
     )
 
-    e_week = endurance_calc[endurance_calc["Week"] == flex_week].copy()
-    s_week = sessions_calc[sessions_calc["Week"] == flex_week].copy()
+    e_week = endurance_today[endurance_today["Week"] == flex_week].copy()
+    s_week = sessions_today[sessions_today["Week"] == flex_week].copy()
 
     col_a, col_b = st.columns(2)
 
