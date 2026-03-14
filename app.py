@@ -866,42 +866,51 @@ with tab_today:
 
     if week_dates:
         st.markdown("#### Week view")
-        week_cols = st.columns(len(week_dates))
-
-        for i, d in enumerate(week_dates):
+    
+        for d in week_dates:
             day_runs = endurance_calc[endurance_calc["_date"] == d].copy()
             day_strength = sessions_calc[sessions_calc["_date"] == d].copy()
     
-            run_txt = ""
-            strength_txt = ""
+            run_names = []
+            strength_names = []
     
             if not day_runs.empty:
-                run_names = day_runs["Session"].dropna().astype(str).tolist()
-                run_txt = "<br>".join([f"🏃 {x}" for x in run_names[:2]])
+                run_names = day_runs["Session"].dropna().astype(str).tolist()[:2]
     
             if not day_strength.empty:
-                strength_names = day_strength["Session"].dropna().astype(str).tolist()
-                strength_txt = "<br>".join([f"🏋️ {x}" for x in strength_names[:2]])
+                strength_names = day_strength["Session"].dropna().astype(str).tolist()[:2]
     
-            if run_txt == "" and strength_txt == "":
-                detail_txt = "Rest / free day"
-            else:
-                detail_txt = f"{run_txt}<br>{strength_txt}".strip("<br>")
+            items = []
+            items += [f"🏃 {x}" for x in run_names]
+            items += [f"🏋️ {x}" for x in strength_names]
     
-            selected_marker = "✅ " if d == selected_date else ""
+            detail_txt = "<br>".join(items) if items else "Rest / free day"
+            selected_style = "border:2px solid #22c55e;" if d == selected_date else ""
     
-            with week_cols[i]:
-                st.markdown(
-                    f"""
-                    <div class="kpi-card" style="padding:10px; min-height:140px;">
-                        <div class="kpi-title">{selected_marker}{d.strftime('%A')}</div>
-                        <p class="kpi-value" style="font-size:1rem;">{d.strftime('%d %b')}</p>
-                        <div class="kpi-sub">{detail_txt}</div>
+            st.markdown(
+                f"""
+                <div class="kpi-card" style="
+                    padding:12px;
+                    margin-bottom:8px;
+                    min-height:auto;
+                    {selected_style}
+                ">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                        <div>
+                            <div class="kpi-title">{d.strftime('%A')}</div>
+                            <div class="kpi-value" style="font-size:0.95rem;">{d.strftime('%d %b')}</div>
+                        </div>
+                        <div style="text-align:right; font-size:0.9rem;">
+                            {"✅ Selected" if d == selected_date else ""}
+                        </div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
+                    <div class="kpi-sub" style="margin-top:8px;">
+                        {detail_txt}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     st.markdown("<br>", unsafe_allow_html=True)
     checkin = get_daily_checkin(CLIENT_ID, selected_date)
 
